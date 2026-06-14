@@ -2,7 +2,6 @@
   "name": "mathhub",
   "private": true,
   "scripts": {
-    "build": "cd app && npm install && npx vite build",
-    "start": "cd server && node server.js"
+    "start": "node server/server.js"
   }
 }
