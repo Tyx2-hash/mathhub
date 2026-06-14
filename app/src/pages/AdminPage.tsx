@@ -315,7 +315,7 @@ export default function AdminPage() {
 
   const handleVideoUpload = async (lessonId: string, file: File) => {
     setUploadingVideo(lessonId);
-    setUploadProgress(0);
+    setUploadProgress(10);
     try {
       // Detect video duration via HTML5 Video API
       const durationStr = await new Promise<string>((resolve) => {
@@ -336,7 +336,9 @@ export default function AdminPage() {
         videoEl.src = objUrl;
       });
 
-      // 上传到后端，存入E盘
+      setUploadProgress(30);
+
+      // 上传到后端
       const formData = new FormData();
       formData.append('file', file);
       const res = await fetch('/api/upload/lessons', {
@@ -346,7 +348,7 @@ export default function AdminPage() {
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || '上传失败');
-      setUploadProgress(100);
+      setUploadProgress(90);
 
       for (const ch of courseChapters) {
         const lesson = ch.lessons.find(l => l.id === lessonId);
@@ -354,7 +356,15 @@ export default function AdminPage() {
           updateLesson(ch.id, lessonId, { videoUrl: data.url, duration: durationStr });
           // 同步到后端
           const course = courses.find(c => c.chapters?.some(cch => cch.id === ch.id));
-          if (course) syncCourseToAPI(course);
+          if (course) {
+            syncCourseToAPI(course);
+            setUploadProgress(100);
+            setTimeout(() => {
+              setUploadingVideo(null);
+              setUploadProgress(0);
+            }, 800);
+            return;
+          }
         }
       }
     } catch (e) {
@@ -430,10 +440,20 @@ export default function AdminPage() {
     }
 
     // Add all new lessons to the chapter
-    setCourseChapters(prev => prev.map(ch => {
-      if (ch.id !== chId) return ch;
-      return { ...ch, lessons: [...ch.lessons, ...newLessons] };
-    }));
+    setCourseChapters(prev => {
+      const updated = prev.map(ch => {
+        if (ch.id !== chId) return ch;
+        return { ...ch, lessons: [...ch.lessons, ...newLessons] };
+      });
+      // 同步到后端
+      const course = courses.find(c => c.chapters?.some(cch => cch.id === chId));
+      if (course) {
+        const idx = updated.findIndex(ch => ch.id === chId);
+        const updatedCourse = { ...course, chapters: updated };
+        syncCourseToAPI(updatedCourse);
+      }
+      return updated;
+    });
 
     setBatchUploading(false);
     setBatchProgress({ current: 0, total: 0, currentFile: '' });
@@ -1208,13 +1228,13 @@ export default function AdminPage() {
                       e.target.value = '';
                     }} />
                     {/* Batch upload progress overlay */}
-                    {batchUploading && batchProgress.current > 0 && (
+                    {batchUploading && batchProgress.total > 0 && (
                       <div className="ml-4 mb-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
                         <div className="flex items-center gap-2 mb-1">
                           <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
                           <span className="text-xs font-medium text-blue-700">批量上传中 {batchProgress.current}/{batchProgress.total}</span>
                         </div>
-                        <Progress value={Math.round((batchProgress.current / batchProgress.total) * 100)} className="h-2" />
+                        <Progress value={batchProgress.total > 0 ? Math.round((batchProgress.current / batchProgress.total) * 100) : 0} className="h-2" />
                         <div className="text-[11px] text-blue-500 mt-1 truncate">{batchProgress.currentFile}</div>
                       </div>
                     )}
