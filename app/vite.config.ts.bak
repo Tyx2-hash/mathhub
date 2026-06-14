@@ -1,0 +1,33 @@
+import path from "path"
+import react from "@vitejs/plugin-react"
+import { defineConfig } from "vite"
+
+// https://vite.dev/config/
+export default defineConfig({
+  base: './',
+  plugins: [
+    react(),
+    // 注入构建时间戳到 index.html，方便确认版本
+    {
+      name: 'build-timestamp',
+      transformIndexHtml(html) {
+        return html.replace('__BUILD_TIME__', new Date().toISOString())
+      }
+    }
+  ],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
+  build: {
+    // 确保每次构建生成不同的 hash 文件名，强制浏览器更新
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/[name]-[hash].js',
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash][extname]',
+      }
+    }
+  }
+});
