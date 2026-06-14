@@ -352,6 +352,9 @@ export default function AdminPage() {
         const lesson = ch.lessons.find(l => l.id === lessonId);
         if (lesson) {
           updateLesson(ch.id, lessonId, { videoUrl: data.url, duration: durationStr });
+          // 同步到后端
+          const course = courses.find(c => c.chapters?.some(cch => cch.id === ch.id));
+          if (course) syncCourseToAPI(course);
         }
       }
     } catch (e) {
@@ -452,6 +455,9 @@ export default function AdminPage() {
         const lesson = ch.lessons.find(l => l.id === lessonId);
         if (lesson) {
           updateLesson(ch.id, lessonId, { materialFileId: data.url, materialFileName: file.name });
+          // 同步到后端
+          const course = courses.find(c => c.chapters?.some(cch => cch.id === ch.id));
+          if (course) syncCourseToAPI(course);
         }
       }
     } catch (e) {
