@@ -137,7 +137,7 @@ export default function AdminPage() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadingMaterial, setUploadingMaterial] = useState<string | null>(null);
   const [batchUploading, setBatchUploading] = useState(false);
-  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, currentFile: '' });
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, currentFile: '', pct: undefined as number | undefined });
   const [batchChapterId, setBatchChapterId] = useState('');
   const videoInputRef = useRef<HTMLInputElement>(null);
   const batchVideoInputRef = useRef<HTMLInputElement>(null);
@@ -398,11 +398,18 @@ export default function AdminPage() {
     setBatchProgress({ current: 0, total: files.length, currentFile: '' });
 
     const newLessons: Lesson[] = [];
+    const totalFiles = files.length;
+    let completedBytes = 0;
+    let totalBytes = 0;
+
+    // Calculate total file size first
+    for (const f of files) totalBytes += f.size;
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const titleFromName = file.name.replace(/\.[^.]+$/, '').replace(/[_\-]+/g, ' ').trim();
       const lessonId = 'l_batch_' + Date.now() + '_' + i;
-      setBatchProgress({ current: i, total: files.length, currentFile: file.name });
+      setBatchProgress({ current: i, total: totalFiles, currentFile: file.name });
 
       try {
         // Detect duration
@@ -424,15 +431,33 @@ export default function AdminPage() {
           videoEl.src = objUrl;
         });
 
-        // 上传到后端，存入E盘
+        // 上传到后端（使用XHR获取真实上传进度）
         const formData = new FormData();
         formData.append('file', file);
-        const res = await fetch('/api/upload/lessons', {
-          method: 'POST',
-          headers: getAuthHeaders(),
-          body: formData,
+        const data = await new Promise<any>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', '/api/upload/lessons');
+          const t = localStorage.getItem('mathhub_token');
+          if (t) xhr.setRequestHeader('Authorization', 'Bearer ' + t);
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const fileProgress = completedBytes + e.loaded;
+              const pct = Math.round((fileProgress / totalBytes) * 100);
+              setBatchProgress(prev => ({ ...prev, current: i, pct }));
+            }
+          };
+          xhr.onload = () => {
+            completedBytes += file.size;
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try { resolve(JSON.parse(xhr.responseText)); }
+              catch { reject(new Error('解析响应失败')); }
+            } else {
+              reject(new Error('上传失败: ' + xhr.status));
+            }
+          };
+          xhr.onerror = () => reject(new Error('网络错误'));
+          xhr.send(formData);
         });
-        const data = await res.json();
         const videoUrl = data.success ? data.url : '';
 
         newLessons.push({
@@ -1247,9 +1272,14 @@ export default function AdminPage() {
                       <div className="ml-4 mb-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
                         <div className="flex items-center gap-2 mb-1">
                           <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                          <span className="text-xs font-medium text-blue-700">批量上传中 {batchProgress.current}/{batchProgress.total}</span>
+                          <span className="text-xs font-medium text-blue-700">
+                            {batchProgress.pct !== undefined
+                              ? `上传中 ${batchProgress.pct}% (${batchProgress.current}/${batchProgress.total})`
+                              : `批量上传中 ${batchProgress.current}/${batchProgress.total}`
+                            }
+                          </span>
                         </div>
-                        <Progress value={batchProgress.total > 0 ? Math.round((batchProgress.current / batchProgress.total) * 100) : 0} className="h-2" />
+                        <Progress value={batchProgress.pct ?? Math.round((batchProgress.current / batchProgress.total) * 100)} className="h-2" />
                         <div className="text-[11px] text-blue-500 mt-1 truncate">{batchProgress.currentFile}</div>
                       </div>
                     )}
