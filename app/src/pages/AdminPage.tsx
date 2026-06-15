@@ -338,32 +338,15 @@ export default function AdminPage() {
 
       setUploadProgress(10);
 
-      // 上传到后端（使用XMLHttpRequest获取真实进度）
+      // 上传到后端
       const formData = new FormData();
       formData.append('file', file);
-      const data = await new Promise<any>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/upload/lessons');
-        const t = localStorage.getItem('mathhub_token');
-        if (t) xhr.setRequestHeader('Authorization', 'Bearer ' + t);
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            setUploadProgress(Math.round(10 + (e.loaded / e.total) * 80));
-          }
-        };
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try { resolve(JSON.parse(xhr.responseText)); }
-            catch { reject(new Error('解析响应失败')); }
-          } else {
-            reject(new Error('上传失败: ' + xhr.status));
-          }
-        };
-        xhr.onerror = () => reject(new Error('网络错误'));
-        xhr.send(formData);
+      const res = await fetch('/api/upload/lessons', {
+        method: 'POST', headers: getAuthHeaders(), body: formData,
       });
+      const data = await res.json();
       if (!data.success) throw new Error(data.error || '上传失败');
-      setUploadProgress(95);
+      setUploadProgress(90);
 
       for (const ch of courseChapters) {
         const lesson = ch.lessons.find(l => l.id === lessonId);
@@ -399,11 +382,6 @@ export default function AdminPage() {
 
     const newLessons: Lesson[] = [];
     const totalFiles = files.length;
-    let completedBytes = 0;
-    let totalBytes = 0;
-
-    // Calculate total file size first
-    for (const f of files) totalBytes += f.size;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -431,34 +409,16 @@ export default function AdminPage() {
           videoEl.src = objUrl;
         });
 
-        // 上传到后端（使用XHR获取真实上传进度）
+        // 上传到后端
         const formData = new FormData();
         formData.append('file', file);
-        const data = await new Promise<any>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('POST', '/api/upload/lessons');
-          const t = localStorage.getItem('mathhub_token');
-          if (t) xhr.setRequestHeader('Authorization', 'Bearer ' + t);
-          xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) {
-              const fileProgress = completedBytes + e.loaded;
-              const pct = Math.round((fileProgress / totalBytes) * 100);
-              setBatchProgress(prev => ({ ...prev, current: i, pct }));
-            }
-          };
-          xhr.onload = () => {
-            completedBytes += file.size;
-            if (xhr.status >= 200 && xhr.status < 300) {
-              try { resolve(JSON.parse(xhr.responseText)); }
-              catch { reject(new Error('解析响应失败')); }
-            } else {
-              reject(new Error('上传失败: ' + xhr.status));
-            }
-          };
-          xhr.onerror = () => reject(new Error('网络错误'));
-          xhr.send(formData);
+        const res = await fetch('/api/upload/lessons', {
+          method: 'POST', headers: getAuthHeaders(), body: formData,
         });
-        const videoUrl = data.success ? data.url : '';
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || '上传失败');
+        const videoUrl = data.url || '';
+        setBatchProgress(prev => ({ ...prev, current: i + 1, pct: Math.round(((i + 1) / totalFiles) * 100) }));
 
         newLessons.push({
           id: lessonId,
@@ -479,21 +439,19 @@ export default function AdminPage() {
       }
     }
 
-    // Add all new lessons to the chapter
-    setCourseChapters(prev => {
-      const updated = prev.map(ch => {
-        if (ch.id !== chId) return ch;
-        return { ...ch, lessons: [...ch.lessons, ...newLessons] };
-      });
-      // 同步到后端
-      const course = courses.find(c => c.chapters?.some(cch => cch.id === chId));
-      if (course) {
-        const idx = updated.findIndex(ch => ch.id === chId);
-        const updatedCourse = { ...course, chapters: updated };
-        syncCourseToAPI(updatedCourse);
-      }
-      return updated;
+    // Add all new lessons to the chapter and sync to backend
+    const newChapters = courseChapters.map(ch => {
+      if (ch.id !== chId) return ch;
+      return { ...ch, lessons: [...ch.lessons, ...newLessons] };
     });
+    setCourseChapters(newChapters);
+
+    // 同步到后端
+    const course = courses.find(c => c.chapters?.some(cch => cch.id === chId));
+    if (course) {
+      const updatedCourse = { ...course, chapters: newChapters };
+      syncCourseToAPI(updatedCourse);
+    }
 
     setBatchUploading(false);
     setBatchProgress({ current: 0, total: 0, currentFile: '' });
