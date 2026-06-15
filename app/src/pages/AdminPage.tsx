@@ -315,7 +315,7 @@ export default function AdminPage() {
 
   const handleVideoUpload = async (lessonId: string, file: File) => {
     setUploadingVideo(lessonId);
-    setUploadProgress(10);
+    setUploadProgress(5);
     try {
       // Detect video duration via HTML5 Video API
       const durationStr = await new Promise<string>((resolve) => {
@@ -336,19 +336,34 @@ export default function AdminPage() {
         videoEl.src = objUrl;
       });
 
-      setUploadProgress(30);
+      setUploadProgress(10);
 
-      // 上传到后端
+      // 上传到后端（使用XMLHttpRequest获取真实进度）
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch('/api/upload/lessons', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: formData,
+      const data = await new Promise<any>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/upload/lessons');
+        const t = localStorage.getItem('mathhub_token');
+        if (t) xhr.setRequestHeader('Authorization', 'Bearer ' + t);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            setUploadProgress(Math.round(10 + (e.loaded / e.total) * 80));
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try { resolve(JSON.parse(xhr.responseText)); }
+            catch { reject(new Error('解析响应失败')); }
+          } else {
+            reject(new Error('上传失败: ' + xhr.status));
+          }
+        };
+        xhr.onerror = () => reject(new Error('网络错误'));
+        xhr.send(formData);
       });
-      const data = await res.json();
       if (!data.success) throw new Error(data.error || '上传失败');
-      setUploadProgress(90);
+      setUploadProgress(95);
 
       for (const ch of courseChapters) {
         const lesson = ch.lessons.find(l => l.id === lessonId);
