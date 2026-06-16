@@ -338,15 +338,34 @@ export default function AdminPage() {
 
       setUploadProgress(10);
 
-      // 上传到后端
+      // 上传到后端（带实时进度）
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch('/api/upload/lessons', {
-        method: 'POST', headers: getAuthHeaders(), body: formData,
+      const fileSize = file.size;
+      const data = await new Promise<any>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/upload/lessons');
+        const t = localStorage.getItem('mathhub_token');
+        if (t) xhr.setRequestHeader('Authorization', 'Bearer ' + t);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const pct = Math.min(99, Math.round(10 + (e.loaded / e.total) * 80));
+            setUploadProgress(pct);
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try { resolve(JSON.parse(xhr.responseText)); }
+            catch { reject(new Error('解析失败')); }
+          } else {
+            reject(new Error('上传失败: ' + xhr.status));
+          }
+        };
+        xhr.onerror = () => reject(new Error('网络错误'));
+        xhr.send(formData);
       });
-      const data = await res.json();
       if (!data.success) throw new Error(data.error || '上传失败');
-      setUploadProgress(90);
+      setUploadProgress(95);
 
       for (const ch of courseChapters) {
         const lesson = ch.lessons.find(l => l.id === lessonId);
@@ -382,6 +401,10 @@ export default function AdminPage() {
 
     const newLessons: Lesson[] = [];
     const totalFiles = files.length;
+    let completedBytes = 0;
+    let totalBytes = 0;
+    for (const f of files) totalBytes += f.size;
+    if (totalBytes === 0) totalBytes = 1;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -409,16 +432,39 @@ export default function AdminPage() {
           videoEl.src = objUrl;
         });
 
-        // 上传到后端
+        // 上传到后端（带实时进度）
         const formData = new FormData();
         formData.append('file', file);
-        const res = await fetch('/api/upload/lessons', {
-          method: 'POST', headers: getAuthHeaders(), body: formData,
+        const fileSize = file.size;
+        const [videoUrl, uploadOk] = await new Promise<[string, boolean]>((resolve) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', '/api/upload/lessons');
+          const t = localStorage.getItem('mathhub_token');
+          if (t) xhr.setRequestHeader('Authorization', 'Bearer ' + t);
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable && totalBytes > 0) {
+              const sofar = completedBytes + e.loaded;
+              const pct = Math.min(99, Math.round((sofar / totalBytes) * 100));
+              setBatchProgress(prev => ({ ...prev, current: i, pct }));
+            }
+          };
+          xhr.onload = () => {
+            completedBytes += fileSize;
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                const d = JSON.parse(xhr.responseText);
+                resolve([d.url || '', d.success === true]);
+              } catch {
+                resolve(['', false]);
+              }
+            } else {
+              resolve(['', false]);
+            }
+          };
+          xhr.onerror = () => resolve(['', false]);
+          xhr.send(formData);
         });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error || '上传失败');
-        const videoUrl = data.url || '';
-        setBatchProgress(prev => ({ ...prev, current: i + 1, pct: Math.round(((i + 1) / totalFiles) * 100) }));
+        if (!uploadOk || !videoUrl) throw new Error('上传失败');
 
         newLessons.push({
           id: lessonId,
