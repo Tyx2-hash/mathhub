@@ -139,6 +139,7 @@ export default function AdminPage() {
   const [batchUploading, setBatchUploading] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, currentFile: '', pct: undefined as number | undefined });
   const [batchChapterId, setBatchChapterId] = useState('');
+  const batchChapterRef = useRef('');
   const videoInputRef = useRef<HTMLInputElement>(null);
   const batchVideoInputRef = useRef<HTMLInputElement>(null);
   const materialInputRef = useRef<HTMLInputElement>(null);
@@ -1262,7 +1263,7 @@ export default function AdminPage() {
                       const files = e.target.files;
                       if (files && files.length > 0) {
                         // Find the chapter for this batch input - store chId in a ref
-                        handleBatchVideoUpload(batchChapterId, files);
+                        handleBatchVideoUpload(batchChapterRef.current, files);
                       }
                       e.target.value = '';
                     }} />
@@ -1292,7 +1293,7 @@ export default function AdminPage() {
                         <Plus className="w-3 h-3 mr-1" />添加课时
                       </Button>
                       <Button size="sm" variant="outline" className="text-xs text-purple-600 border-purple-200 bg-purple-50 hover:bg-purple-100 rounded-lg"
-                        onClick={() => { setBatchChapterId(ch.id); batchVideoInputRef.current?.click(); }}>
+                        onClick={() => { setBatchChapterId(ch.id); batchChapterRef.current = ch.id; batchVideoInputRef.current?.click(); }}>
                         <Upload className="w-3 h-3 mr-1" />批量上传视频
                       </Button>
                     </div>
